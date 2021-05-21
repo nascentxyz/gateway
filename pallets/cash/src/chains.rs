@@ -3,8 +3,10 @@ use crate::reason::Reason;
 use crate::types::{
     AssetAmount, CashIndex, SignersSet, Timestamp, ValidatorIdentity, ValidatorKeys,
 };
+use crate::MaticStarportParentBlock;
 use codec::{Decode, Encode};
 use ethereum_client::{EthereumBlock, EthereumEvent};
+use frame_support::storage::StorageValue;
 use gateway_crypto::public_key_bytes_to_eth_address;
 use our_std::vec::Vec;
 use our_std::{
@@ -20,6 +22,7 @@ pub enum ChainId {
     Reserved,
     Eth,
     Dot,
+    Matic, // xxx todo: due to rebrand ticker and name don't match for MATIC/Polygon.. so review this enum name is this what we want to call this?
 }
 
 impl ChainId {
@@ -27,6 +30,7 @@ impl ChainId {
         match self {
             ChainId::Reserved => Err(Reason::Unreachable),
             ChainId::Eth => Ok(ChainAccount::Eth(Ethereum::str_to_address(addr)?)),
+            ChainId::Matic => Ok(ChainAccount::Matic(Polygon::str_to_address(addr)?)),
             ChainId::Dot => Ok(ChainAccount::Dot(Polkadot::str_to_address(addr)?)),
         }
     }
@@ -35,6 +39,7 @@ impl ChainId {
         match self {
             ChainId::Reserved => Err(Reason::Unreachable),
             ChainId::Eth => Ok(ChainAsset::Eth(Ethereum::str_to_address(addr)?)),
+            ChainId::Matic => Ok(ChainAsset::Matic(Polygon::str_to_address(addr)?)),
             ChainId::Dot => Ok(ChainAsset::Dot(Polkadot::str_to_address(addr)?)),
         }
     }
@@ -43,6 +48,7 @@ impl ChainId {
         match self {
             ChainId::Reserved => Ok(ChainHash::Reserved),
             ChainId::Eth => Ok(ChainHash::Eth(Ethereum::str_to_hash(hash)?)),
+            ChainId::Matic => Ok(ChainHash::Matic(Polygon::str_to_hash(hash)?)),
             ChainId::Dot => Ok(ChainHash::Dot(Polkadot::str_to_hash(hash)?)),
         }
     }
@@ -51,6 +57,7 @@ impl ChainId {
         match self {
             ChainId::Reserved => Err(Reason::Unreachable),
             ChainId::Eth => Ok(ChainAccount::Eth(<Ethereum as Chain>::signer_address()?)),
+            ChainId::Matic => Ok(ChainAccount::Matic(<Polygon as Chain>::signer_address()?)),
             ChainId::Dot => Ok(ChainAccount::Dot(<Polkadot as Chain>::signer_address()?)),
         }
     }
@@ -59,6 +66,7 @@ impl ChainId {
         match self {
             ChainId::Reserved => ChainHash::Reserved,
             ChainId::Eth => ChainHash::Eth(<Ethereum as Chain>::hash_bytes(data)),
+            ChainId::Matic => ChainHash::Matic(<Polygon as Chain>::hash_bytes(data)),
             ChainId::Dot => ChainHash::Dot(<Polkadot as Chain>::hash_bytes(data)),
         }
     }
@@ -67,6 +75,9 @@ impl ChainId {
         match self {
             ChainId::Reserved => Err(Reason::Unreachable),
             ChainId::Eth => Ok(ChainSignature::Eth(<Ethereum as Chain>::sign_message(
+                message,
+            )?)),
+            ChainId::Matic => Ok(ChainSignature::Matic(<Polygon as Chain>::sign_message(
                 message,
             )?)),
             ChainId::Dot => Ok(ChainSignature::Dot(<Polkadot as Chain>::sign_message(
@@ -79,6 +90,7 @@ impl ChainId {
         match self {
             ChainId::Reserved => ChainHash::Reserved,
             ChainId::Eth => ChainHash::Eth(<Ethereum as Chain>::zero_hash()),
+            ChainId::Matic => ChainHash::Matic(<Polygon as Chain>::zero_hash()),
             ChainId::Dot => ChainHash::Dot(<Polkadot as Chain>::zero_hash()),
         }
     }
@@ -90,6 +102,7 @@ pub enum ChainAccount {
     Reserved,
     Eth(<Ethereum as Chain>::Address),
     Dot(<Polkadot as Chain>::Address),
+    Matic(<Polygon as Chain>::Address),
 }
 
 impl ChainAccount {
@@ -97,6 +110,7 @@ impl ChainAccount {
         match *self {
             ChainAccount::Reserved => ChainId::Reserved,
             ChainAccount::Eth(_) => ChainId::Eth,
+            ChainAccount::Matic(_) => ChainId::Matic,
             ChainAccount::Dot(_) => ChainId::Dot,
         }
     }
@@ -123,6 +137,7 @@ impl From<ChainAccount> for String {
         match asset {
             ChainAccount::Reserved => String::from("RESERVED"),
             ChainAccount::Eth(address) => format!("ETH:0x{}", hex::encode(address)),
+            ChainAccount::Matic(address) => format!("MATIC:0x{}", hex::encode(address)),
             ChainAccount::Dot(_) => String::from("DOT"),
         }
     }
@@ -134,6 +149,7 @@ pub enum ChainAsset {
     Reserved,
     Eth(<Ethereum as Chain>::Address),
     Dot(<Polkadot as Chain>::Address),
+    Matic(<Polygon as Chain>::Address),
 }
 
 // For serialize (which we don't really use, but are required to implement)
@@ -142,6 +158,7 @@ impl ChainAsset {
         match *self {
             ChainAsset::Reserved => ChainId::Reserved,
             ChainAsset::Eth(_) => ChainId::Eth,
+            ChainAsset::Matic(_) => ChainId::Matic,
             ChainAsset::Dot(_) => ChainId::Dot,
         }
     }
@@ -167,6 +184,7 @@ impl From<ChainAsset> for String {
         match asset {
             ChainAsset::Reserved => String::from("RESERVED"),
             ChainAsset::Eth(address) => format!("ETH:0x{}", hex::encode(address)),
+            ChainAsset::Matic(address) => format!("MATIC:0x{}", hex::encode(address)),
             ChainAsset::Dot(_) => String::from("DOT"),
         }
     }
@@ -178,6 +196,7 @@ pub enum ChainAccountSignature {
     Reserved,
     Eth(<Ethereum as Chain>::Address, <Ethereum as Chain>::Signature),
     Dot(<Polkadot as Chain>::Address, <Polkadot as Chain>::Signature),
+    Matic(<Polygon as Chain>::Address, <Polygon as Chain>::Signature),
 }
 
 impl ChainAccountSignature {
@@ -185,6 +204,7 @@ impl ChainAccountSignature {
         match self {
             ChainAccountSignature::Reserved => ChainSignature::Reserved,
             ChainAccountSignature::Eth(_, sig) => ChainSignature::Eth(sig),
+            ChainAccountSignature::Matic(_, sig) => ChainSignature::Matic(sig),
             ChainAccountSignature::Dot(_, sig) => ChainSignature::Dot(sig),
         }
     }
@@ -196,6 +216,14 @@ impl ChainAccountSignature {
                 let recovered = <Ethereum as Chain>::recover_user_address(message, eth_sig)?;
                 if eth_account == recovered {
                     Ok(ChainAccount::Eth(recovered))
+                } else {
+                    Err(Reason::SignatureAccountMismatch)
+                }
+            }
+            ChainAccountSignature::Matic(account, sig) => {
+                let recovered = <Polygon as Chain>::recover_user_address(message, sig)?;
+                if account == recovered {
+                    Ok(ChainAccount::Matic(recovered))
                 } else {
                     Err(Reason::SignatureAccountMismatch)
                 }
@@ -215,6 +243,7 @@ pub enum ChainHash {
     Reserved,
     Eth(<Ethereum as Chain>::Hash),
     Dot(<Polkadot as Chain>::Hash),
+    Matic(<Polygon as Chain>::Hash),
 }
 
 // Display so we can format local storage keys.
@@ -223,6 +252,7 @@ impl our_std::fmt::Display for ChainHash {
         match self {
             ChainHash::Reserved => write!(f, "RESERVED"),
             ChainHash::Eth(eth_hash) => write!(f, "ETH#{:X?}", eth_hash),
+            ChainHash::Matic(hash) => write!(f, "MATIC#{:X?}", hash),
             ChainHash::Dot(dot_hash) => write!(f, "DOT#{:X?}", dot_hash),
         }
     }
@@ -248,6 +278,7 @@ impl From<ChainHash> for String {
         match hash {
             ChainHash::Reserved => format!("RESERVED"),
             ChainHash::Eth(eth_hash) => <Ethereum as Chain>::hash_string(&eth_hash),
+            ChainHash::Matic(hash) => <Polygon as Chain>::hash_string(&hash),
             ChainHash::Dot(_) => format!("DOT"),
         }
     }
@@ -259,6 +290,7 @@ pub enum ChainSignature {
     Reserved,
     Eth(<Ethereum as Chain>::Signature),
     Dot(<Polkadot as Chain>::Signature),
+    Matic(<Polygon as Chain>::Signature),
 }
 
 impl ChainSignature {
@@ -266,6 +298,7 @@ impl ChainSignature {
         match self {
             ChainSignature::Reserved => ChainId::Reserved,
             ChainSignature::Eth(_) => ChainId::Eth,
+            ChainSignature::Matic(_) => ChainId::Matic,
             ChainSignature::Dot(_) => ChainId::Dot,
         }
     }
@@ -275,6 +308,9 @@ impl ChainSignature {
             ChainSignature::Reserved => Err(Reason::Unreachable),
             ChainSignature::Eth(eth_sig) => Ok(ChainAccount::Eth(
                 <Ethereum as Chain>::recover_address(message, *eth_sig)?,
+            )),
+            ChainSignature::Matic(sig) => Ok(ChainAccount::Matic(
+                <Polygon as Chain>::recover_address(message, *sig)?,
             )),
             ChainSignature::Dot(_) => Err(Reason::Unreachable),
         }
@@ -287,6 +323,7 @@ pub enum ChainSignatureList {
     Reserved,
     Eth(Vec<(<Ethereum as Chain>::Address, <Ethereum as Chain>::Signature)>),
     Dot(Vec<(<Polkadot as Chain>::Address, <Polkadot as Chain>::Signature)>),
+    Matic(Vec<(<Polygon as Chain>::Address, <Polygon as Chain>::Signature)>),
 }
 
 impl ChainSignatureList {
@@ -328,6 +365,7 @@ impl FromStr for ChainId {
         match s.to_ascii_uppercase().as_str() {
             "ETH" => Ok(ChainId::Eth),
             "DOT" => Ok(ChainId::Dot),
+            "MATIC" => Ok(ChainId::Matic),
             _ => Err(Reason::BadChainId),
         }
     }
@@ -339,6 +377,7 @@ impl FromStr for ChainId {
 pub enum ChainBlock {
     Reserved,
     Eth(<Ethereum as Chain>::Block),
+    Matic(<Polygon as Chain>::Block),
 }
 
 impl ChainBlock {
@@ -346,6 +385,7 @@ impl ChainBlock {
         match self {
             ChainBlock::Reserved => ChainId::Reserved,
             ChainBlock::Eth(_) => ChainId::Eth,
+            ChainBlock::Matic(_) => ChainId::Matic,
         }
     }
 
@@ -353,6 +393,7 @@ impl ChainBlock {
         match self {
             ChainBlock::Reserved => ChainHash::Reserved,
             ChainBlock::Eth(block) => ChainHash::Eth(block.hash),
+            ChainBlock::Matic(block) => ChainHash::Matic(block.hash),
         }
     }
 
@@ -360,6 +401,7 @@ impl ChainBlock {
         match self {
             ChainBlock::Reserved => ChainHash::Reserved,
             ChainBlock::Eth(block) => ChainHash::Eth(block.parent_hash),
+            ChainBlock::Matic(block) => ChainHash::Matic(block.parent_hash),
         }
     }
 
@@ -367,17 +409,28 @@ impl ChainBlock {
         match self {
             ChainBlock::Reserved => 0,
             ChainBlock::Eth(block) => block.number,
+            ChainBlock::Matic(block) => block.number,
         }
     }
 
     pub fn events(&self) -> impl Iterator<Item = ChainBlockEvent> + '_ {
-        match self {
+        let return_value: Box<dyn Iterator<Item = ChainBlockEvent>> = match self {
             ChainBlock::Reserved => panic!("xxx not implemented"),
-            ChainBlock::Eth(block) => block
-                .events
-                .iter()
-                .map(move |e| ChainBlockEvent::Eth(block.number, e.clone())),
-        }
+            ChainBlock::Eth(block) => Box::new(
+                block
+                    .events
+                    .iter()
+                    .map(move |e| ChainBlockEvent::Eth(block.number, e.clone())),
+            ),
+            ChainBlock::Matic(block) => Box::new(
+                block
+                    .events
+                    .iter()
+                    .map(move |e| ChainBlockEvent::Matic(block.number, e.clone())),
+            ),
+        };
+
+        return_value
     }
 }
 
@@ -386,6 +439,7 @@ impl ChainBlock {
 pub enum ChainBlocks {
     Reserved,
     Eth(Vec<<Ethereum as Chain>::Block>),
+    Matic(Vec<<Polygon as Chain>::Block>),
 }
 
 impl ChainBlocks {
@@ -393,6 +447,7 @@ impl ChainBlocks {
         match self {
             ChainBlocks::Reserved => ChainId::Reserved,
             ChainBlocks::Eth(_) => ChainId::Eth,
+            ChainBlocks::Matic(_) => ChainId::Matic,
         }
     }
 
@@ -400,21 +455,30 @@ impl ChainBlocks {
         match self {
             ChainBlocks::Reserved => 0,
             ChainBlocks::Eth(blocks) => blocks.len(),
+            ChainBlocks::Matic(blocks) => blocks.len(),
         }
     }
 
     pub fn blocks(&self) -> impl Iterator<Item = ChainBlock> + '_ {
-        match self {
+        let return_value: Box<dyn Iterator<Item = ChainBlock>> = match self {
             ChainBlocks::Reserved => panic!("xxx not implemented"),
-            ChainBlocks::Eth(blocks) => blocks.iter().map(|b| ChainBlock::Eth(b.clone())),
-        }
+            ChainBlocks::Eth(blocks) => Box::new(blocks.iter().map(|b| ChainBlock::Eth(b.clone()))),
+            ChainBlocks::Matic(blocks) => {
+                Box::new(blocks.iter().map(|b| ChainBlock::Matic(b.clone())))
+            }
+        };
+
+        return_value
     }
 
     pub fn block_numbers(&self) -> impl Iterator<Item = u64> + '_ {
-        match self {
+        let return_value: Box<dyn Iterator<Item = u64>> = match self {
             ChainBlocks::Reserved => panic!("xxx not implemented"),
-            ChainBlocks::Eth(blocks) => blocks.iter().map(|b| b.number),
-        }
+            ChainBlocks::Eth(blocks) => Box::new(blocks.iter().map(|b| b.number)),
+            ChainBlocks::Matic(blocks) => Box::new(blocks.iter().map(|b| b.number)),
+        };
+
+        return_value
     }
 
     pub fn filter_already_signed(
@@ -435,6 +499,16 @@ impl ChainBlocks {
                     })
                     .collect(),
             ),
+            ChainBlocks::Matic(blocks) => ChainBlocks::Matic(
+                blocks
+                    .into_iter()
+                    .filter(|block| {
+                        !pending_blocks.iter().any(|t| {
+                            t.block.hash() == ChainHash::Matic(block.hash) && t.has_signer(signer)
+                        })
+                    })
+                    .collect(),
+            ),
         }
     }
 }
@@ -444,6 +518,7 @@ impl From<ChainBlock> for ChainBlocks {
         match block {
             ChainBlock::Reserved => ChainBlocks::Reserved,
             ChainBlock::Eth(block) => ChainBlocks::Eth(vec![block]),
+            ChainBlock::Matic(block) => ChainBlocks::Matic(vec![block]),
         }
     }
 }
@@ -458,6 +533,12 @@ pub enum ChainReorg {
         reverse_blocks: Vec<<Ethereum as Chain>::Block>,
         forward_blocks: Vec<<Ethereum as Chain>::Block>,
     },
+    Matic {
+        from_hash: <Polygon as Chain>::Hash,
+        to_hash: <Polygon as Chain>::Hash,
+        reverse_blocks: Vec<<Polygon as Chain>::Block>,
+        forward_blocks: Vec<<Polygon as Chain>::Block>,
+    },
 }
 
 impl ChainReorg {
@@ -465,6 +546,7 @@ impl ChainReorg {
         match self {
             ChainReorg::Reserved => ChainId::Reserved,
             ChainReorg::Eth { .. } => ChainId::Eth,
+            ChainReorg::Matic { .. } => ChainId::Matic,
         }
     }
 
@@ -472,6 +554,7 @@ impl ChainReorg {
         match self {
             ChainReorg::Reserved => ChainHash::Reserved,
             ChainReorg::Eth { from_hash, .. } => ChainHash::Eth(*from_hash),
+            ChainReorg::Matic { from_hash, .. } => ChainHash::Matic(*from_hash),
         }
     }
 
@@ -479,25 +562,36 @@ impl ChainReorg {
         match self {
             ChainReorg::Reserved => ChainHash::Reserved,
             ChainReorg::Eth { to_hash, .. } => ChainHash::Eth(*to_hash),
+            ChainReorg::Matic { to_hash, .. } => ChainHash::Matic(*to_hash),
         }
     }
 
     pub fn reverse_blocks(&self) -> impl Iterator<Item = ChainBlock> + '_ {
-        match self {
+        let return_value: Box<dyn Iterator<Item = ChainBlock>> = match self {
             ChainReorg::Reserved => panic!("xxx not implemented"),
             ChainReorg::Eth { reverse_blocks, .. } => {
-                reverse_blocks.iter().map(|b| ChainBlock::Eth(b.clone()))
+                Box::new(reverse_blocks.iter().map(|b| ChainBlock::Eth(b.clone())))
             }
-        }
+            ChainReorg::Matic { reverse_blocks, .. } => {
+                Box::new(reverse_blocks.iter().map(|b| ChainBlock::Matic(b.clone())))
+            }
+        };
+
+        return_value
     }
 
     pub fn forward_blocks(&self) -> impl Iterator<Item = ChainBlock> + '_ {
-        match self {
+        let return_value: Box<dyn Iterator<Item = ChainBlock>> = match self {
             ChainReorg::Reserved => panic!("xxx not implemented"),
             ChainReorg::Eth { forward_blocks, .. } => {
-                forward_blocks.iter().map(|b| ChainBlock::Eth(b.clone()))
+                Box::new(forward_blocks.iter().map(|b| ChainBlock::Eth(b.clone())))
             }
-        }
+            ChainReorg::Matic { forward_blocks, .. } => {
+                Box::new(forward_blocks.iter().map(|b| ChainBlock::Matic(b.clone())))
+            }
+        };
+
+        return_value
     }
 
     /// Check whether the given validator already submitted the given reorg.
@@ -509,6 +603,12 @@ impl ChainReorg {
         match self {
             ChainReorg::Reserved => false,
             ChainReorg::Eth { .. } => {
+                let to_hash = self.to_hash();
+                pending_reorgs
+                    .iter()
+                    .any(|tally| tally.reorg.to_hash() == to_hash && tally.has_signer(signer))
+            }
+            ChainReorg::Matic { .. } => {
                 let to_hash = self.to_hash();
                 pending_reorgs
                     .iter()
@@ -601,6 +701,7 @@ impl ChainReorgTally {
 pub enum ChainBlockEvent {
     Reserved,
     Eth(ChainBlockNumber, <Ethereum as Chain>::Event),
+    Matic(ChainBlockNumber, <Polygon as Chain>::Event),
 }
 
 impl ChainBlockEvent {
@@ -608,6 +709,7 @@ impl ChainBlockEvent {
         match self {
             ChainBlockEvent::Reserved => ChainId::Reserved,
             ChainBlockEvent::Eth(..) => ChainId::Eth,
+            ChainBlockEvent::Matic(..) => ChainId::Matic,
         }
     }
 
@@ -615,6 +717,7 @@ impl ChainBlockEvent {
         match self {
             ChainBlockEvent::Reserved => 0,
             ChainBlockEvent::Eth(block_num, _) => *block_num,
+            ChainBlockEvent::Matic(block_num, _) => *block_num,
         }
     }
 
@@ -628,6 +731,7 @@ impl ChainBlockEvent {
 pub enum ChainBlockEvents {
     Reserved,
     Eth(Vec<(ChainBlockNumber, <Ethereum as Chain>::Event)>),
+    Matic(Vec<(ChainBlockNumber, <Polygon as Chain>::Event)>),
 }
 
 impl ChainBlockEvents {
@@ -636,6 +740,7 @@ impl ChainBlockEvents {
         match chain_id {
             ChainId::Reserved => ChainBlockEvents::Reserved,
             ChainId::Eth => ChainBlockEvents::Eth(vec![]),
+            ChainId::Matic => ChainBlockEvents::Matic(vec![]),
             ChainId::Dot => panic!("xxx not implemented"),
         }
     }
@@ -645,6 +750,7 @@ impl ChainBlockEvents {
         match self {
             ChainBlockEvents::Reserved => 0,
             ChainBlockEvents::Eth(eth_block_events) => eth_block_events.len(),
+            ChainBlockEvents::Matic(block_events) => block_events.len(),
         }
     }
 
@@ -656,6 +762,14 @@ impl ChainBlockEvents {
                 ChainBlock::Eth(eth_block) => {
                     for event in eth_block.events.iter() {
                         eth_block_events.push((eth_block.number, event.clone()));
+                    }
+                }
+                _ => panic!("block type mismatch"),
+            },
+            ChainBlockEvents::Matic(block_events) => match block {
+                ChainBlock::Matic(eth_block) => {
+                    for event in eth_block.events.iter() {
+                        block_events.push((eth_block.number, event.clone()));
                     }
                 }
                 _ => panic!("block type mismatch"),
@@ -673,6 +787,9 @@ impl ChainBlockEvents {
             ChainBlockEvents::Eth(eth_block_events) => {
                 eth_block_events.retain(|(b, e)| f(&ChainBlockEvent::Eth(*b, e.clone())));
             }
+            ChainBlockEvents::Matic(eth_block_events) => {
+                eth_block_events.retain(|(b, e)| f(&ChainBlockEvent::Eth(*b, e.clone())));
+            }
         }
     }
 
@@ -686,6 +803,12 @@ impl ChainBlockEvents {
                     .position(|(b, e)| *b == *block_num && *e == *eth_block),
                 _ => None,
             },
+            ChainBlockEvents::Matic(eth_block_events) => match event {
+                ChainBlockEvent::Matic(block_num, eth_block) => eth_block_events
+                    .iter()
+                    .position(|(b, e)| *b == *block_num && *e == *eth_block),
+                _ => None,
+            },
         }
     }
 
@@ -694,6 +817,9 @@ impl ChainBlockEvents {
         match self {
             ChainBlockEvents::Reserved => (),
             ChainBlockEvents::Eth(eth_block_events) => {
+                eth_block_events.remove(pos);
+            }
+            ChainBlockEvents::Matic(eth_block_events) => {
                 eth_block_events.remove(pos);
             }
         }
@@ -733,6 +859,9 @@ pub trait Chain {
 pub struct Ethereum {}
 
 #[derive(Clone, Eq, PartialEq, Encode, Decode, RuntimeDebug)]
+pub struct Polygon {}
+
+#[derive(Clone, Eq, PartialEq, Encode, Decode, RuntimeDebug)]
 pub struct Polkadot {}
 
 impl Chain for Ethereum {
@@ -766,6 +895,110 @@ impl Chain for Ethereum {
     type Event = EthereumEvent;
 
     #[type_alias("Ethereum__Chain__")]
+    type Block = EthereumBlock;
+
+    fn zero_hash() -> Self::Hash {
+        [0u8; 32]
+    }
+
+    fn hash_bytes(data: &[u8]) -> Self::Hash {
+        use tiny_keccak::Hasher;
+        let mut hash = [0u8; 32];
+        let mut hasher = tiny_keccak::Keccak::v256();
+        hasher.update(&data[..]);
+        hasher.finalize(&mut hash);
+        hash
+    }
+
+    fn recover_user_address(
+        data: &[u8],
+        signature: Self::Signature,
+    ) -> Result<Self::Address, Reason> {
+        Ok(runtime_interfaces::keyring_interface::eth_recover(
+            data.into(),
+            signature,
+            true,
+        )?)
+    }
+
+    fn recover_address(data: &[u8], signature: Self::Signature) -> Result<Self::Address, Reason> {
+        Ok(runtime_interfaces::keyring_interface::eth_recover(
+            data.into(),
+            signature,
+            false,
+        )?)
+    }
+
+    fn sign_message(message: &[u8]) -> Result<Self::Signature, Reason> {
+        let message = Vec::from(message);
+        let eth_key_id = runtime_interfaces::validator_config_interface::get_eth_key_id()
+            .ok_or(Reason::KeyNotFound)?;
+        Ok(runtime_interfaces::keyring_interface::sign_one(
+            message, eth_key_id,
+        )?)
+    }
+
+    fn signer_address() -> Result<Self::Address, Reason> {
+        let eth_key_id = runtime_interfaces::validator_config_interface::get_eth_key_id()
+            .ok_or(Reason::KeyNotFound)?;
+        let pubk = runtime_interfaces::keyring_interface::get_public_key(eth_key_id)?;
+        Ok(public_key_bytes_to_eth_address(&pubk))
+    }
+
+    fn str_to_address(addr: &str) -> Result<Self::Address, Reason> {
+        match gateway_crypto::eth_str_to_address(addr) {
+            Some(s) => Ok(s),
+            None => Err(Reason::BadAddress),
+        }
+    }
+
+    fn address_string(address: &Self::Address) -> String {
+        gateway_crypto::eth_address_string(address)
+    }
+
+    fn str_to_hash(hash: &str) -> Result<Self::Hash, Reason> {
+        match gateway_crypto::eth_str_to_hash(hash) {
+            Some(s) => Ok(s),
+            None => Err(Reason::BadHash),
+        }
+    }
+
+    fn hash_string(hash: &Self::Hash) -> String {
+        gateway_crypto::eth_hash_string(hash)
+    }
+}
+
+impl Chain for Polygon {
+    const ID: ChainId = ChainId::Matic;
+
+    #[type_alias("Polygon__Chain__")]
+    type Address = [u8; 20];
+
+    #[type_alias("Polygon__Chain__")]
+    type Amount = u128;
+
+    #[type_alias("Polygon__Chain__")]
+    type CashIndex = u128;
+
+    #[type_alias("Polygon__Chain__")]
+    type Rate = u128;
+
+    #[type_alias("Polygon__Chain__")]
+    type Timestamp = u64;
+
+    #[type_alias("Polygon__Chain__")]
+    type Hash = [u8; 32];
+
+    #[type_alias("Polygon__Chain__")]
+    type PublicKey = [u8; 64];
+
+    #[type_alias("Polygon__Chain__")]
+    type Signature = [u8; 65];
+
+    #[type_alias("Polygon__Chain__")]
+    type Event = EthereumEvent;
+
+    #[type_alias("Polygon__Chain__")]
     type Block = EthereumBlock;
 
     fn zero_hash() -> Self::Hash {
@@ -923,6 +1156,12 @@ pub fn get_chain_account(chain: String, recipient: [u8; 32]) -> Result<ChainAcco
             eth_recipient[..].clone_from_slice(&recipient[0..20]);
 
             Ok(ChainAccount::Eth(eth_recipient))
+        }
+        "MATIC" => {
+            let mut matic_recipient: [u8; 20] = [0; 20];
+            matic_recipient[..].clone_from_slice(&recipient[0..20]);
+
+            Ok(ChainAccount::Matic(matic_recipient))
         }
         _ => Err(Reason::InvalidChain),
     }

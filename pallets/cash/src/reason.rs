@@ -75,6 +75,7 @@ pub enum Reason {
     MissingLastBlock,
     StarportMissing,
     InvalidChainBlock,
+    StarportParentBlockNotSet,
 }
 
 impl From<Reason> for frame_support::dispatch::DispatchError {
@@ -148,6 +149,7 @@ impl From<Reason> for frame_support::dispatch::DispatchError {
             Reason::MissingLastBlock => (39, 0, "last processed block not set"),
             Reason::StarportMissing => (40, 0, "starport address not set"),
             Reason::InvalidChainBlock => (41, 0, "invalid chain block"),
+            Reason::StarportParentBlockNotSet => (42, 0, "Starport parent block is not set"),
         };
         frame_support::dispatch::DispatchError::Module {
             index,
